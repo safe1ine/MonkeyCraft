@@ -186,8 +186,11 @@ export class PlayerController {
   getLookTarget() {
     this.camera.getWorldDirection(this.raycaster.ray.direction);
     this.raycaster.ray.origin.copy(this.camera.position);
-    const hit = this.raycaster.intersectObjects(this.world.getInteractiveMeshes(), false)[0];
-    return hit || null;
+    return this.world.raycastBlock(
+      this.raycaster.ray.origin,
+      this.raycaster.ray.direction,
+      this.raycaster.far
+    );
   }
 
   canPlaceAt(x, y, z) {

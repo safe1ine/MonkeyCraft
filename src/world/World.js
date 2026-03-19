@@ -29,6 +29,20 @@ export class World {
     this.loadingChunks = new Set();
   }
 
+  setSeed(seed) {
+    this.seed = seed;
+  }
+
+  resetLoadedChunks() {
+    for (const chunk of this.activeChunks.values()) {
+      for (const mesh of chunk.meshes.values()) {
+        this.scene.remove(mesh);
+      }
+    }
+    this.activeChunks.clear();
+    this.loadingChunks.clear();
+  }
+
   getChunkCoords(x, z) {
     return {
       cx: floorDiv(x, this.chunkSize),
@@ -189,7 +203,17 @@ export class World {
     if (lx < 2 || lz < 2 || lx > this.chunkSize - 3 || lz > this.chunkSize - 3) return;
     if (height + 6 >= this.maxHeight) return;
     if (this.surfaceType(gx, gz) !== "grass") return;
-    if (this.hash2(gx, gz) < 0.9) return;
+    const groveNoise =
+      Math.sin((gx + this.seed * 0.7) * 0.035) +
+      Math.cos((gz - this.seed * 0.4) * 0.04);
+    if (groveNoise < 0.45) return;
+
+    const treeChance = this.hash2(gx, gz);
+    if (treeChance < 0.975) return;
+
+    // Keep a little breathing room between trunks so forests do not become walls.
+    if (this.hash2(gx + 1, gz) > 0.965) return;
+    if (this.hash2(gx, gz + 1) > 0.965) return;
 
     const trunkHeight = 3 + Math.floor(this.hash2(gx + 17, gz - 19) * 2);
     for (let dy = 1; dy <= trunkHeight; dy++) {
@@ -370,6 +394,65 @@ export class World {
       blocks: blockCount,
       meshes: meshCount,
     };
+  }
+
+  raycastBlock(origin, direction, maxDistance = 7) {
+    const dir = direction.clone().normalize();
+    if (dir.lengthSq() === 0) return null;
+
+    let x = Math.floor(origin.x);
+    let y = Math.floor(origin.y);
+    let z = Math.floor(origin.z);
+
+    const stepX = dir.x > 0 ? 1 : dir.x < 0 ? -1 : 0;
+    const stepY = dir.y > 0 ? 1 : dir.y < 0 ? -1 : 0;
+    const stepZ = dir.z > 0 ? 1 : dir.z < 0 ? -1 : 0;
+
+    const nextBoundaryX = stepX > 0 ? x + 1 : x;
+    const nextBoundaryY = stepY > 0 ? y + 1 : y;
+    const nextBoundaryZ = stepZ > 0 ? z + 1 : z;
+
+    let tMaxX = stepX !== 0 ? (nextBoundaryX - origin.x) / dir.x : Infinity;
+    let tMaxY = stepY !== 0 ? (nextBoundaryY - origin.y) / dir.y : Infinity;
+    let tMaxZ = stepZ !== 0 ? (nextBoundaryZ - origin.z) / dir.z : Infinity;
+
+    const tDeltaX = stepX !== 0 ? Math.abs(1 / dir.x) : Infinity;
+    const tDeltaY = stepY !== 0 ? Math.abs(1 / dir.y) : Infinity;
+    const tDeltaZ = stepZ !== 0 ? Math.abs(1 / dir.z) : Infinity;
+
+    let distance = 0;
+    let normal = new THREE.Vector3();
+
+    while (distance <= maxDistance) {
+      const type = this.getBlock(x, y, z);
+      if (type) {
+        return {
+          distance,
+          point: origin.clone().addScaledVector(dir, distance),
+          face: { normal: normal.clone() },
+          object: { userData: { blockPos: { x, y, z }, blockType: type } },
+        };
+      }
+
+      if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+        x += stepX;
+        distance = tMaxX;
+        tMaxX += tDeltaX;
+        normal.set(-stepX, 0, 0);
+      } else if (tMaxY < tMaxZ) {
+        y += stepY;
+        distance = tMaxY;
+        tMaxY += tDeltaY;
+        normal.set(0, -stepY, 0);
+      } else {
+        z += stepZ;
+        distance = tMaxZ;
+        tMaxZ += tDeltaZ;
+        normal.set(0, 0, -stepZ);
+      }
+    }
+
+    return null;
   }
 
 }

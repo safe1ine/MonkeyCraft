@@ -121,6 +121,26 @@ export class Game {
     await this.world.updateStreaming(this.player.pos);
   }
 
+  createRandomSeed() {
+    return Math.floor(Math.random() * 2147483647);
+  }
+
+  resetRunState() {
+    this.world.resetLoadedChunks();
+    this.player.pos.set(0, 16, 0);
+    this.player.vel.set(0, 0, 0);
+    this.player.yaw = 0;
+    this.player.pitch = 0;
+    this.player.onGround = false;
+    this.inventory.clear();
+    this.selectedBlockIndex = 0;
+    this.currentLookTarget = null;
+    this.leftMouseDown = false;
+    this.interactionCooldown = 0;
+    this.stopMining();
+    this.selectionOutline.visible = false;
+  }
+
   handleBlockHotkeys(event) {
     if (!event.code.startsWith("Digit")) return;
     const idx = Number(event.code.replace("Digit", "")) - 1;
@@ -376,9 +396,11 @@ export class Game {
 
   async beginGame() {
     if (this.started) return;
-    this.hud.setWelcomeStatus("正在读取存档...");
+    this.hud.setWelcomeStatus("正在创建新世界...");
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    await this.initFromSave();
+    await this.saveStore.clearAll();
+    this.resetRunState();
+    this.world.setSeed(this.createRandomSeed());
     this.hud.setWelcomeStatus("正在生成地图...");
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await this.world.updateStreaming(this.player.pos);

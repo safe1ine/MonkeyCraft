@@ -86,4 +86,22 @@ export class SaveStore {
     const store = tx.objectStore(META_STORE);
     await requestToPromise(store.put(playerData, "player"));
   }
+
+  async clearAll() {
+    for (const timer of this.saveTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.saveTimers.clear();
+
+    await this.init();
+    const tx = this.db.transaction([CHUNK_STORE, META_STORE], "readwrite");
+    tx.objectStore(CHUNK_STORE).clear();
+    tx.objectStore(META_STORE).clear();
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Unable to clear save data"));
+      tx.onabort = () => reject(tx.error || new Error("Save clear aborted"));
+    });
+  }
 }

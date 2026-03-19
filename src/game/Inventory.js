@@ -56,5 +56,8 @@ export class Inventory {
     }
     return out;
   }
-}
 
+  clear() {
+    this.items.clear();
+  }
+}
