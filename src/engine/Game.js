@@ -20,6 +20,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     document.body.appendChild(this.renderer.domElement);
 
+    this.sunDirection = new THREE.Vector3(20, 30, 15).normalize();
     this.addLights();
 
     this.clock = new THREE.Clock();
@@ -52,6 +53,7 @@ export class Game {
 
     this.createSelectionOutline();
     this.createMiningOverlay();
+    this.createSunBillboard();
     this.animate = this.animate.bind(this);
     this.onResize = this.onResize.bind(this);
     this.refreshRecipesUI();
@@ -62,8 +64,45 @@ export class Game {
     this.scene.add(hemiLight);
 
     const sun = new THREE.DirectionalLight(0xffffff, 0.85);
-    sun.position.set(20, 30, 15);
+    sun.position.copy(this.sunDirection.clone().multiplyScalar(80));
     this.scene.add(sun);
+  }
+
+  createSunBillboard() {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const gradient = ctx.createRadialGradient(
+      size * 0.5,
+      size * 0.5,
+      size * 0.06,
+      size * 0.5,
+      size * 0.5,
+      size * 0.5
+    );
+    gradient.addColorStop(0.0, "rgba(255,255,255,0.98)");
+    gradient.addColorStop(0.18, "rgba(255,255,250,0.95)");
+    gradient.addColorStop(0.4, "rgba(210,236,255,0.42)");
+    gradient.addColorStop(0.72, "rgba(170,215,255,0.16)");
+    gradient.addColorStop(1.0, "rgba(150,205,255,0.0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    const sunTexture = new THREE.CanvasTexture(canvas);
+    sunTexture.colorSpace = THREE.SRGBColorSpace;
+    const sunMaterial = new THREE.SpriteMaterial({
+      map: sunTexture,
+      fog: false,
+      depthWrite: false,
+      depthTest: false,
+      transparent: true,
+      opacity: 1,
+    });
+    this.sunSprite = new THREE.Sprite(sunMaterial);
+    this.sunSprite.scale.set(42, 42, 1);
+    this.scene.add(this.sunSprite);
   }
 
   createSelectionOutline() {
@@ -255,6 +294,10 @@ export class Game {
       this.stopMining();
       return;
     }
+    if (BLOCKS[type]?.breakable === false) {
+      this.stopMining();
+      return;
+    }
 
     this.mining.active = true;
     this.mining.targetKey = this.getBlockKey(pos);
@@ -353,6 +396,13 @@ export class Game {
     this.selectionOutline.visible = true;
   }
 
+  updateSun() {
+    if (!this.sunSprite) return;
+    const sunOffset = this.sunDirection.clone().multiplyScalar(180);
+    const sunPosition = this.camera.position.clone().add(sunOffset);
+    this.sunSprite.position.copy(sunPosition);
+  }
+
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -417,6 +467,7 @@ export class Game {
     const nowMs = performance.now();
 
     this.player.update(dt);
+    this.updateSun();
     this.updateSelectionOutline();
     this.updateMining(dt);
 

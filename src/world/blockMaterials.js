@@ -17,6 +17,9 @@ function mat(texture, extra = {}) {
 }
 
 export function createBlockMaterials() {
+  const bedrock = loadTexture(
+    "../../assets/minecraft/textures/block/bedrock.png"
+  );
   const dirt = loadTexture("../../assets/minecraft/textures/block/dirt.png");
   const grassTop = loadTexture(
     "../../assets/minecraft/textures/block/grass_block_top.png"
@@ -42,10 +45,11 @@ export function createBlockMaterials() {
   const craftingFront = loadTexture(
     "../../assets/minecraft/textures/block/crafting_table_front.png"
   );
-  const grassTint = new THREE.Color(0x7cbd6b);
-  const leavesTint = new THREE.Color(0x5e9d48);
+  const grassTint = new THREE.Color(0x91bd59);
+  const leavesTint = new THREE.Color(0x77ab2f);
 
   return {
+    bedrock: mat(bedrock),
     dirt: mat(dirt),
     grass: [
       mat(grassSide, { color: grassTint }),

@@ -200,8 +200,7 @@ export class World {
   }
 
   tryGenerateTree(blocks, lx, height, lz, gx, gz) {
-    if (lx < 2 || lz < 2 || lx > this.chunkSize - 3 || lz > this.chunkSize - 3) return;
-    if (height + 6 >= this.maxHeight) return;
+    if (lx < 3 || lz < 3 || lx > this.chunkSize - 4 || lz > this.chunkSize - 4) return;
     if (this.surfaceType(gx, gz) !== "grass") return;
     const groveNoise =
       Math.sin((gx + this.seed * 0.7) * 0.035) +
@@ -215,19 +214,32 @@ export class World {
     if (this.hash2(gx + 1, gz) > 0.965) return;
     if (this.hash2(gx, gz + 1) > 0.965) return;
 
-    const trunkHeight = 3 + Math.floor(this.hash2(gx + 17, gz - 19) * 2);
+    const trunkHeight = 3 + Math.floor(this.hash2(gx + 17, gz - 19) * 4);
+    const canopyRadius = trunkHeight >= 6 ? 3 : 2;
+    const leafBaseY = height + trunkHeight - (canopyRadius >= 3 ? 2 : 1);
+    const leafTopY = height + trunkHeight + 1;
+    if (leafTopY + 1 >= this.maxHeight) return;
+
     for (let dy = 1; dy <= trunkHeight; dy++) {
       blocks.set(localKey(lx, height + dy, lz), "wood");
     }
 
-    const leafY = height + trunkHeight;
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          const dist = Math.abs(dx) + Math.abs(dz) + Math.abs(dy);
-          if (dist > 4) continue;
+    for (let ty = leafBaseY; ty <= leafTopY; ty++) {
+      const heightRatio = (ty - leafBaseY) / Math.max(1, leafTopY - leafBaseY);
+      const radius =
+        canopyRadius -
+        (heightRatio > 0.7 ? 1 : 0) -
+        (heightRatio < 0.15 && canopyRadius > 2 ? 1 : 0);
+
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+          const edgeBias = Math.abs(dx) + Math.abs(dz);
+          const skipChance = this.hash2(gx + dx * 13 + ty, gz + dz * 17 - ty);
+          if (edgeBias > radius + 1) continue;
+          if (edgeBias === radius + 1 && skipChance < 0.8) continue;
+          if (edgeBias === radius && skipChance < 0.22) continue;
+
           const tx = lx + dx;
-          const ty = leafY + dy;
           const tz = lz + dz;
           if (tx < 0 || tx >= this.chunkSize || tz < 0 || tz >= this.chunkSize) continue;
           if (ty < 0 || ty >= this.maxHeight) continue;
@@ -236,6 +248,13 @@ export class World {
             blocks.set(key, "leaves");
           }
         }
+      }
+    }
+
+    if (trunkHeight >= 5 && this.hash2(gx - 9, gz + 5) > 0.45) {
+      const crownY = height + trunkHeight + 1;
+      if (crownY < this.maxHeight && !blocks.has(localKey(lx, crownY, lz))) {
+        blocks.set(localKey(lx, crownY, lz), "leaves");
       }
     }
   }
@@ -251,7 +270,8 @@ export class World {
         const gz = baseZ + lz;
         const height = this.terrainHeight(gx, gz);
         const surface = this.surfaceType(gx, gz);
-        for (let y = 0; y <= height; y++) {
+        blocks.set(localKey(lx, 0, lz), "bedrock");
+        for (let y = 1; y <= height; y++) {
           let type = "dirt";
           if (y === height) type = surface;
           else if (y < height - 2) type = "stone";

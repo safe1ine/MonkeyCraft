@@ -1,6 +1,6 @@
 export const WORLD_CONFIG = {
   chunkSize: 16,
-  maxHeight: 40,
+  maxHeight: 64,
   renderDistance: 3,
   seed: 1337,
 };
@@ -15,6 +15,7 @@ export const PLAYER_CONFIG = {
 };
 
 export const BLOCKS = {
+  bedrock: { color: 0x4b4b4b, solid: true, breakTime: Infinity, breakable: false },
   grass: { color: 0x65b84f, solid: true, breakTime: 0.45 },
   dirt: { color: 0x8b5a2b, solid: true, breakTime: 0.4 },
   stone: { color: 0x8f8f8f, solid: true, breakTime: 1.2 },
@@ -27,6 +28,7 @@ export const BLOCKS = {
 export const PLACEABLE_BLOCKS = ["dirt", "grass", "stone", "sand", "wood", "crafting_table"];
 
 export const BLOCK_LABELS = {
+  bedrock: "基岩",
   grass: "草方块",
   dirt: "泥土",
   stone: "石头",
