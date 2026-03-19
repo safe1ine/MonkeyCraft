@@ -1,0 +1,9 @@
+{
+  "name": "mymc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure frontend single-player voxel sandbox",
+  "scripts": {
+    "serve": "python3 -m http.server 8000"
+  }
+}

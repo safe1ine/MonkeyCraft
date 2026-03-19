@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mini Minecraft Web</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="hud">
+      <div id="tips">点击屏幕开始 | WASD 移动 | Space 跳跃 | Shift 冲刺 | 左键挖掘 | 右键放置</div>
+      <div id="crosshair"></div>
+      <div id="status"></div>
+      <div id="toolbox" class="hidden">
+        <div class="toolbox-title">物品栏 / 制作 (E)</div>
+        <div class="toolbox-grid">
+          <div>
+            <div class="toolbox-subtitle">背包</div>
+            <div id="inventory-list" class="toolbox-list"></div>
+          </div>
+          <div>
+            <div class="toolbox-subtitle">合成</div>
+            <div id="recipe-list" class="toolbox-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
