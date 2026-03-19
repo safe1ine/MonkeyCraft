@@ -21,9 +21,9 @@ export class Game {
     this.scene.fog = new THREE.Fog(this.defaultSkyColor.clone(), fogStart, fogEnd);
 
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    this.renderer.setPixelRatio(Math.min(1, window.devicePixelRatio));
     document.body.appendChild(this.renderer.domElement);
 
     this.sunDirection = new THREE.Vector3(20, 30, 15).normalize();
@@ -121,7 +121,7 @@ export class Game {
   }
 
   createCloudLayer() {
-    const cloudCount = 16;
+    const cloudCount = 10;
     for (let i = 0; i < cloudCount; i += 1) {
       const texture = this.createCloudTexture(1000 + i * 37);
       const material = new THREE.SpriteMaterial({
@@ -550,6 +550,8 @@ export class Game {
 
   updateVitals(dt) {
     if (!this.started) return;
+    const prevHealth = this.health;
+    const prevHunger = this.hunger;
 
     const cameraUnderwater = this.isCameraUnderwater();
 
@@ -577,7 +579,9 @@ export class Game {
     } else {
       this.hungerDrainTimer = 0;
     }
-    this.hud.setVitals({ health: this.health, hunger: this.hunger });
+    if (this.health !== prevHealth || this.hunger !== prevHunger) {
+      this.hud.setVitals({ health: this.health, hunger: this.hunger });
+    }
   }
 
   onResize() {
@@ -659,7 +663,12 @@ export class Game {
     this.maybeStreamWorld(nowMs);
     this.maybeSavePlayer(nowMs);
 
-    this.hud.renderStatus(this.player, this.world.getStats());
+    // Throttle status text updates to ~4fps
+    if (!this._lastStatusAt || nowMs - this._lastStatusAt > 250) {
+      this._lastStatusAt = nowMs;
+      this.hud.renderStatus(this.player, this.world.getStats());
+    }
+
     this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(this.animate);
   }

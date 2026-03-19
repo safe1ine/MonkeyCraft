@@ -12,6 +12,42 @@ const NEIGHBORS = [
   [0, 0, -1],
 ];
 
+// Face definitions: [dir, u-axis, v-axis, normal-axis, sign]
+// Each face has 4 vertices defined by offsets
+const FACE_VERTICES = {
+  // +X face
+  px: { normal: [1, 0, 0], vertices: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]], uv: [[0,0],[0,1],[1,1],[1,0]] },
+  // -X face
+  nx: { normal: [-1, 0, 0], vertices: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]], uv: [[0,0],[0,1],[1,1],[1,0]] },
+  // +Y face
+  py: { normal: [0, 1, 0], vertices: [[0,1,0],[0,1,1],[1,1,1],[1,1,0]], uv: [[0,0],[0,1],[1,1],[1,0]] },
+  // -Y face
+  ny: { normal: [0, -1, 0], vertices: [[0,0,1],[0,0,0],[1,0,0],[1,0,1]], uv: [[0,0],[0,1],[1,1],[1,0]] },
+  // +Z face
+  pz: { normal: [0, 0, 1], vertices: [[1,0,1],[1,1,1],[0,1,1],[0,0,1]], uv: [[0,0],[0,1],[1,1],[1,0]] },
+  // -Z face
+  nz: { normal: [0, 0, -1], vertices: [[0,0,0],[0,1,0],[1,1,0],[1,0,0]], uv: [[0,0],[0,1],[1,1],[1,0]] },
+};
+
+// Map neighbor offset to face key
+const NEIGHBOR_TO_FACE = [
+  'px', 'nx', 'py', 'ny', 'pz', 'nz',
+];
+
+// Material key for multi-material blocks (like grass with 6 faces)
+function getMaterialForFace(materials, blockType, faceIndex) {
+  const mat = materials[blockType];
+  if (!mat) return materials.dirt;
+  if (Array.isArray(mat)) return mat[faceIndex] || mat[0];
+  return mat;
+}
+
+// Group key: serialize material identity for batching
+function materialKey(mat) {
+  // Use the material uuid as grouping key
+  return mat.uuid;
+}
+
 export class World {
   constructor(scene, saveStore) {
     this.scene = scene;
@@ -23,10 +59,9 @@ export class World {
     this.seaLevel = WORLD_CONFIG.seaLevel;
     this.seed = WORLD_CONFIG.seed;
 
-    this.cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
-    this.plantGeometry = new THREE.PlaneGeometry(1, 1);
     this.waterGeometry = new THREE.PlaneGeometry(1, 1);
     this.materials = createBlockMaterials();
+    this.plantGeometry = new THREE.PlaneGeometry(1, 1);
 
     this.activeChunks = new Map();
     this.loadingChunks = new Set();
@@ -38,12 +73,26 @@ export class World {
 
   resetLoadedChunks() {
     for (const chunk of this.activeChunks.values()) {
-      for (const mesh of chunk.meshes.values()) {
-        this.scene.remove(mesh);
-      }
+      this._removeChunkMeshes(chunk);
     }
     this.activeChunks.clear();
     this.loadingChunks.clear();
+  }
+
+  _removeChunkMeshes(chunk) {
+    if (chunk.solidMeshes) {
+      for (const mesh of chunk.solidMeshes) {
+        this.scene.remove(mesh);
+        mesh.geometry.dispose();
+      }
+      chunk.solidMeshes = [];
+    }
+    if (chunk.plantMeshes) {
+      for (const mesh of chunk.plantMeshes.values()) {
+        this.scene.remove(mesh);
+      }
+      chunk.plantMeshes.clear();
+    }
   }
 
   getChunkCoords(x, z) {
@@ -90,7 +139,95 @@ export class World {
     return false;
   }
 
-  createCrossPlantObject(type, x, y, z) {
+  // Build merged geometry for a chunk - only exposed faces
+  buildChunkMeshes(chunk) {
+    this._removeChunkMeshes(chunk);
+
+    const baseX = chunk.cx * this.chunkSize;
+    const baseZ = chunk.cz * this.chunkSize;
+
+    // Collect faces grouped by material
+    const matGroups = new Map(); // materialKey -> { mat, positions, normals, uvs, indices }
+    const plantMeshes = new Map();
+
+    for (const [k, type] of chunk.blocks.entries()) {
+      const [lx, y, lz] = k.split(",").map(Number);
+      const gx = baseX + lx;
+      const gz = baseZ + lz;
+
+      // Handle cross-type plants as individual meshes (they're few)
+      if (BLOCKS[type]?.renderType === "cross") {
+        const group = this._createCrossPlant(type, gx, y, gz);
+        const plantKey = `${gx},${y},${gz}`;
+        plantMeshes.set(plantKey, group);
+        this.scene.add(group);
+        continue;
+      }
+
+      // Handle water as individual plane meshes (only top-exposed water)
+      if (type === "water") {
+        if (this.getBlock(gx, y + 1, gz) !== "water") {
+          const waterMesh = this._createWaterObject(gx, y, gz);
+          const waterKey = `${gx},${y},${gz}`;
+          plantMeshes.set(waterKey, waterMesh);
+          this.scene.add(waterMesh);
+        }
+        continue;
+      }
+
+      // For solid blocks, check each face
+      for (let fi = 0; fi < 6; fi++) {
+        const [dx, dy, dz] = NEIGHBORS[fi];
+        const nx = gx + dx;
+        const ny = y + dy;
+        const nz = gz + dz;
+        const neighbor = this.getBlock(nx, ny, nz);
+        // Skip face if neighbor is solid and occludes
+        if (neighbor && BLOCKS[neighbor]?.occludes !== false) continue;
+
+        const mat = getMaterialForFace(this.materials, type, fi);
+        const mk = materialKey(mat);
+
+        if (!matGroups.has(mk)) {
+          matGroups.set(mk, { mat, positions: [], normals: [], uvs: [], indices: [] });
+        }
+        const grp = matGroups.get(mk);
+        const face = FACE_VERTICES[NEIGHBOR_TO_FACE[fi]];
+        const vertBase = grp.positions.length / 3;
+
+        for (let vi = 0; vi < 4; vi++) {
+          const v = face.vertices[vi];
+          grp.positions.push(gx + v[0], y + v[1], gz + v[2]);
+          grp.normals.push(face.normal[0], face.normal[1], face.normal[2]);
+          grp.uvs.push(face.uv[vi][0], face.uv[vi][1]);
+        }
+        // Two triangles per face
+        grp.indices.push(vertBase, vertBase + 1, vertBase + 2);
+        grp.indices.push(vertBase, vertBase + 2, vertBase + 3);
+      }
+    }
+
+    // Build merged meshes
+    const solidMeshes = [];
+    for (const grp of matGroups.values()) {
+      if (grp.positions.length === 0) continue;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(grp.positions, 3));
+      geometry.setAttribute("normal", new THREE.Float32BufferAttribute(grp.normals, 3));
+      geometry.setAttribute("uv", new THREE.Float32BufferAttribute(grp.uvs, 2));
+      geometry.setIndex(grp.indices);
+      const mesh = new THREE.Mesh(geometry, grp.mat);
+      mesh.matrixAutoUpdate = false;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      solidMeshes.push(mesh);
+    }
+
+    chunk.solidMeshes = solidMeshes;
+    chunk.plantMeshes = plantMeshes;
+  }
+
+  _createCrossPlant(type, x, y, z) {
     const group = new THREE.Group();
     const material = this.materials[type] || this.materials.flower_red;
     const planeA = new THREE.Mesh(this.plantGeometry, material);
@@ -106,87 +243,13 @@ export class World {
     return group;
   }
 
-  createWaterObject(x, y, z) {
+  _createWaterObject(x, y, z) {
     const mesh = new THREE.Mesh(this.waterGeometry, this.materials.water.top);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x + 0.5, y + 0.86, z + 0.5);
     mesh.userData.blockPos = { x, y, z };
     mesh.userData.blockType = "water";
     return mesh;
-  }
-
-  createBlockObject(type, x, y, z) {
-    if (type === "water") {
-      return this.createWaterObject(x, y, z);
-    }
-    if (BLOCKS[type]?.renderType === "cross") {
-      return this.createCrossPlantObject(type, x, y, z);
-    }
-
-    const mesh = new THREE.Mesh(this.cubeGeometry, this.materials[type] || this.materials.dirt);
-    mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
-    mesh.userData.blockPos = { x, y, z };
-    mesh.userData.blockType = type;
-    return mesh;
-  }
-
-  ensureBlockMesh(x, y, z, type) {
-    const { cx, cz } = this.getChunkCoords(x, z);
-    const chunk = this.getChunk(cx, cz);
-    if (!chunk) return;
-
-    const globalKey = `${x},${y},${z}`;
-    const existing = chunk.meshes.get(globalKey);
-
-    if (!this.isBlockExposed(x, y, z)) {
-      if (existing) {
-        this.scene.remove(existing);
-        chunk.meshes.delete(globalKey);
-      }
-      return;
-    }
-
-    if (existing?.userData?.blockType === type) return;
-    if (existing) {
-      this.scene.remove(existing);
-      chunk.meshes.delete(globalKey);
-    }
-
-    const obj = this.createBlockObject(type, x, y, z);
-    this.scene.add(obj);
-    chunk.meshes.set(globalKey, obj);
-  }
-
-  removeBlockMesh(x, y, z) {
-    const { cx, cz } = this.getChunkCoords(x, z);
-    const chunk = this.getChunk(cx, cz);
-    if (!chunk) return;
-    const globalKey = `${x},${y},${z}`;
-    const mesh = chunk.meshes.get(globalKey);
-    if (!mesh) return;
-    this.scene.remove(mesh);
-    chunk.meshes.delete(globalKey);
-  }
-
-  updateBlockVisualAndNeighbors(x, y, z) {
-    const type = this.getBlock(x, y, z);
-    if (type) {
-      this.ensureBlockMesh(x, y, z, type);
-    } else {
-      this.removeBlockMesh(x, y, z);
-    }
-
-    for (const [dx, dy, dz] of NEIGHBORS) {
-      const nx = x + dx;
-      const ny = y + dy;
-      const nz = z + dz;
-      const neighborType = this.getBlock(nx, ny, nz);
-      if (neighborType) {
-        this.ensureBlockMesh(nx, ny, nz, neighborType);
-      } else {
-        this.removeBlockMesh(nx, ny, nz);
-      }
-    }
   }
 
   setBlock(x, y, z, type, options = {}) {
@@ -203,13 +266,31 @@ export class World {
     }
 
     chunk.dirty = !options.skipDirty;
-    this.updateBlockVisualAndNeighbors(x, y, z);
+
+    // Rebuild this chunk and affected neighbor chunks
+    this.buildChunkMeshes(chunk);
+    this._rebuildNeighborChunksIfNeeded(x, y, z, cx, cz);
 
     if (chunk.dirty && this.saveStore) {
       this.saveStore.scheduleChunkSave(chunk.key, this.serializeChunk(chunk));
     }
 
     return true;
+  }
+
+  _rebuildNeighborChunksIfNeeded(x, y, z, cx, cz) {
+    const { lx, lz } = this.getChunkCoords(x, z);
+    const neighborChunks = new Set();
+    // If block is on chunk edge, neighbor chunk needs rebuild
+    if (lx === 0) neighborChunks.add(chunkKey(cx - 1, cz));
+    if (lx === this.chunkSize - 1) neighborChunks.add(chunkKey(cx + 1, cz));
+    if (lz === 0) neighborChunks.add(chunkKey(cx, cz - 1));
+    if (lz === this.chunkSize - 1) neighborChunks.add(chunkKey(cx, cz + 1));
+
+    for (const nk of neighborChunks) {
+      const nc = this.activeChunks.get(nk);
+      if (nc) this.buildChunkMeshes(nc);
+    }
   }
 
   serializeChunk(chunk) {
@@ -687,42 +768,15 @@ export class World {
         cx,
         cz,
         blocks: savedPayload ? this.deserializeBlocks(savedPayload) : this.generateChunkBlocks(cx, cz),
-        meshes: new Map(),
+        solidMeshes: [],
+        plantMeshes: new Map(),
         dirty: false,
       };
 
       this.activeChunks.set(key, chunk);
-
-      const baseX = cx * this.chunkSize;
-      const baseZ = cz * this.chunkSize;
-
-      for (const [k, type] of chunk.blocks.entries()) {
-        const [lx, y, lz] = k.split(",").map(Number);
-        const gx = baseX + lx;
-        const gz = baseZ + lz;
-        this.updateBlockVisualAndNeighbors(gx, y, gz);
-      }
+      this.buildChunkMeshes(chunk);
     } finally {
       this.loadingChunks.delete(key);
-    }
-  }
-
-  refreshBoundaryAfterUnload(cx, cz) {
-    const minX = cx * this.chunkSize;
-    const maxX = minX + this.chunkSize - 1;
-    const minZ = cz * this.chunkSize;
-    const maxZ = minZ + this.chunkSize - 1;
-
-    for (let x = minX - 1; x <= maxX + 1; x++) {
-      for (let z = minZ - 1; z <= maxZ + 1; z++) {
-        const isBoundary = x === minX - 1 || x === maxX + 1 || z === minZ - 1 || z === maxZ + 1;
-        if (!isBoundary) continue;
-        for (let y = 0; y < this.maxHeight; y++) {
-          const type = this.getBlock(x, y, z);
-          if (!type) continue;
-          this.ensureBlockMesh(x, y, z, type);
-        }
-      }
     }
   }
 
@@ -731,16 +785,23 @@ export class World {
     const chunk = this.activeChunks.get(key);
     if (!chunk) return;
 
-    for (const mesh of chunk.meshes.values()) {
-      this.scene.remove(mesh);
-    }
+    this._removeChunkMeshes(chunk);
 
     if (chunk.dirty && this.saveStore) {
       await this.saveStore.flushChunk(key, this.serializeChunk(chunk));
     }
 
     this.activeChunks.delete(key);
-    this.refreshBoundaryAfterUnload(cx, cz);
+    // Rebuild neighbor chunks to fix boundary faces
+    this._rebuildAdjacentChunks(cx, cz);
+  }
+
+  _rebuildAdjacentChunks(cx, cz) {
+    const offsets = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dx, dz] of offsets) {
+      const nc = this.getChunk(cx + dx, cz + dz);
+      if (nc) this.buildChunkMeshes(nc);
+    }
   }
 
   async updateStreaming(playerPos) {
@@ -782,22 +843,12 @@ export class World {
     await Promise.all(pending);
   }
 
-  getInteractiveMeshes() {
-    const meshes = [];
-    for (const chunk of this.activeChunks.values()) {
-      for (const mesh of chunk.meshes.values()) {
-        meshes.push(mesh);
-      }
-    }
-    return meshes;
-  }
-
   getStats() {
     let blockCount = 0;
     let meshCount = 0;
     for (const chunk of this.activeChunks.values()) {
       blockCount += chunk.blocks.size;
-      meshCount += chunk.meshes.size;
+      meshCount += (chunk.solidMeshes?.length || 0) + (chunk.plantMeshes?.size || 0);
     }
     return {
       chunks: this.activeChunks.size,
@@ -864,5 +915,4 @@ export class World {
 
     return null;
   }
-
 }

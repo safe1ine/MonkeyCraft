@@ -248,36 +248,51 @@ export class Hud {
       this.hotbarInventory = items;
     }
     const inventory = this.hotbarInventory || {};
-    this.hotbarEl.innerHTML = "";
+
+    // Create slot elements once, then update in-place
+    if (!this._hotbarSlots || this._hotbarSlots.length !== 9) {
+      this.hotbarEl.innerHTML = "";
+      this._hotbarSlots = [];
+      for (let i = 0; i < 9; i++) {
+        const slot = document.createElement("div");
+        slot.className = "hotbar-slot";
+        const icon = document.createElement("div");
+        icon.className = "hotbar-icon";
+        const count = document.createElement("div");
+        count.className = "hotbar-count";
+        slot.appendChild(icon);
+        slot.appendChild(count);
+        this.hotbarEl.appendChild(slot);
+        this._hotbarSlots.push({ slot, icon, count });
+      }
+    }
 
     for (let i = 0; i < 9; i++) {
       const itemId = this.hotbarItems[i] || "";
-      const slot = document.createElement("div");
-      slot.className = `hotbar-slot${i === this.selectedHotbarIndex ? " is-selected" : ""}${itemId ? "" : " is-empty"}`;
+      const { slot, icon, count } = this._hotbarSlots[i];
+
+      const selected = i === this.selectedHotbarIndex;
+      const empty = !itemId;
+      const wantClass = `hotbar-slot${selected ? " is-selected" : ""}${empty ? " is-empty" : ""}`;
+      if (slot.className !== wantClass) slot.className = wantClass;
 
       if (itemId) {
-        const icon = document.createElement("div");
-        icon.className = "hotbar-icon";
         const iconDef = resolveHotbarIcon(itemId);
-        if (iconDef?.url) {
-          icon.style.backgroundImage = `url("${iconDef.url}")`;
-          if (iconDef.tint === "grass") {
-            icon.style.filter = "hue-rotate(-8deg) saturate(1.1) brightness(1.02)";
-          }
-        } else {
-          icon.textContent = itemId.slice(0, 2).toUpperCase();
-        }
+        const bgImg = iconDef?.url ? `url("${iconDef.url}")` : "";
+        if (icon.style.backgroundImage !== bgImg) icon.style.backgroundImage = bgImg;
+        const filterVal = iconDef?.tint === "grass" ? "hue-rotate(-8deg) saturate(1.1) brightness(1.02)" : "";
+        if (icon.style.filter !== filterVal) icon.style.filter = filterVal;
+        icon.textContent = bgImg ? "" : itemId.slice(0, 2).toUpperCase();
 
-        const count = document.createElement("div");
-        count.className = "hotbar-count";
         const amount = inventory[itemId] || 0;
-        count.textContent = amount > 0 ? String(amount) : "";
-
-        slot.appendChild(icon);
-        slot.appendChild(count);
+        const countText = amount > 0 ? String(amount) : "";
+        if (count.textContent !== countText) count.textContent = countText;
+      } else {
+        if (icon.style.backgroundImage) icon.style.backgroundImage = "";
+        if (icon.style.filter) icon.style.filter = "";
+        if (icon.textContent) icon.textContent = "";
+        if (count.textContent) count.textContent = "";
       }
-
-      this.hotbarEl.appendChild(slot);
     }
 
     const xpFill = Math.min(100, Math.max(8, Object.keys(inventory).length * 12));
@@ -298,21 +313,35 @@ export class Hud {
 
   renderVitals() {
     if (this.healthBarEl) {
-      this.healthBarEl.innerHTML = "";
+      this._ensureVitalIcons(this.healthBarEl, 10, "heart", "_heartIcons");
       for (let i = 0; i < 10; i++) {
-        const heart = document.createElement("div");
-        heart.className = `vital-icon heart${i < this.health ? " is-filled" : ""}`;
-        this.healthBarEl.appendChild(heart);
+        const filled = i < this.health;
+        const el = this._heartIcons[i];
+        if (filled && !el.classList.contains("is-filled")) el.classList.add("is-filled");
+        else if (!filled && el.classList.contains("is-filled")) el.classList.remove("is-filled");
       }
     }
 
     if (this.hungerBarEl) {
-      this.hungerBarEl.innerHTML = "";
+      this._ensureVitalIcons(this.hungerBarEl, 10, "hunger", "_hungerIcons");
       for (let i = 0; i < 10; i++) {
-        const hunger = document.createElement("div");
-        hunger.className = `vital-icon hunger${i < this.hunger ? " is-filled" : ""}`;
-        this.hungerBarEl.appendChild(hunger);
+        const filled = i < this.hunger;
+        const el = this._hungerIcons[i];
+        if (filled && !el.classList.contains("is-filled")) el.classList.add("is-filled");
+        else if (!filled && el.classList.contains("is-filled")) el.classList.remove("is-filled");
       }
+    }
+  }
+
+  _ensureVitalIcons(container, count, type, cacheKey) {
+    if (this[cacheKey] && this[cacheKey].length === count) return;
+    container.innerHTML = "";
+    this[cacheKey] = [];
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement("div");
+      el.className = `vital-icon ${type}`;
+      container.appendChild(el);
+      this[cacheKey].push(el);
     }
   }
 
