@@ -26,6 +26,7 @@ export class World {
     this.cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
     this.plantGeometry = new THREE.PlaneGeometry(1, 1);
     this.waterGeometry = new THREE.PlaneGeometry(1, 1);
+    this.waterSideGeometry = new THREE.PlaneGeometry(1, 0.86);
     this.materials = createBlockMaterials();
 
     this.activeChunks = new Map();
@@ -107,12 +108,34 @@ export class World {
   }
 
   createWaterObject(x, y, z) {
-    const mesh = new THREE.Mesh(this.waterGeometry, this.materials.water.top);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x + 0.5, y + 0.86, z + 0.5);
-    mesh.userData.blockPos = { x, y, z };
-    mesh.userData.blockType = "water";
-    return mesh;
+    const group = new THREE.Group();
+
+    const top = new THREE.Mesh(this.waterGeometry, this.materials.water.top);
+    top.rotation.x = -Math.PI / 2;
+    top.position.set(0.5, 0.86, 0.5);
+    group.add(top);
+
+    const sideDefs = [
+      { dx: 1, dz: 0, px: 1, pz: 0.5, ry: -Math.PI / 2 },
+      { dx: -1, dz: 0, px: 0, pz: 0.5, ry: Math.PI / 2 },
+      { dx: 0, dz: 1, px: 0.5, pz: 1, ry: Math.PI },
+      { dx: 0, dz: -1, px: 0.5, pz: 0, ry: 0 },
+    ];
+
+    for (const sideDef of sideDefs) {
+      const neighbor = this.getBlock(x + sideDef.dx, y, z + sideDef.dz);
+      if (neighbor === "water") continue;
+
+      const side = new THREE.Mesh(this.waterSideGeometry, this.materials.water.side);
+      side.position.set(sideDef.px, 0.43, sideDef.pz);
+      side.rotation.y = sideDef.ry;
+      group.add(side);
+    }
+
+    group.position.set(x, y, z);
+    group.userData.blockPos = { x, y, z };
+    group.userData.blockType = "water";
+    return group;
   }
 
   createBlockObject(type, x, y, z) {
@@ -274,32 +297,116 @@ export class World {
     return "grass";
   }
 
-  shouldFloodColumn(x, z, height) {
-    if (height >= this.seaLevel - 1) return false;
-    if (height <= this.seaLevel - 4) return true;
-
-    const basinNoise =
+  floodNoise(x, z) {
+    return (
       Math.sin((x - this.seed * 0.23) * 0.032) +
       Math.cos((z + this.seed * 0.19) * 0.029) +
-      this.hash2(x * 0.71 + 17, z * 0.67 - 11) * 0.72;
-
-    return basinNoise > 1.15;
+      this.hash2(x * 0.71 + 17, z * 0.67 - 11) * 0.72
+    );
   }
 
-  shouldFloodShoreline(x, z, height) {
-    if (height !== this.seaLevel - 1) return false;
+  isFloodSeed(x, z, height) {
+    if (height >= this.seaLevel) return false;
+    if (height <= this.seaLevel - 4) return true;
+    return this.floodNoise(x, z) > 1.15;
+  }
 
-    const neighbors = [
-      [x + 1, z],
-      [x - 1, z],
-      [x, z + 1],
-      [x, z - 1],
-    ];
+  getGeneratedBlockType(x, y, z) {
+    if (y <= 0) return "bedrock";
+    if (y >= this.maxHeight) return null;
 
-    return neighbors.some(([nx, nz]) => {
-      const neighborHeight = this.terrainHeight(nx, nz);
-      return neighborHeight < this.seaLevel - 1 && this.shouldFloodColumn(nx, nz, neighborHeight);
-    });
+    const height = this.terrainHeight(x, z);
+    if (y > height) return null;
+
+    const surface = this.surfaceType(x, z);
+    if (y === height) return surface;
+    if (y < height - 2) {
+      if (this.shouldCarveCave(x, y, z, height)) return null;
+      return "stone";
+    }
+    return "dirt";
+  }
+
+  buildFloodedCells(baseX, baseZ) {
+    const flooded = new Set();
+    const queue = [];
+
+    for (let lx = -1; lx <= this.chunkSize; lx++) {
+      for (let lz = -1; lz <= this.chunkSize; lz++) {
+        const gx = baseX + lx;
+        const gz = baseZ + lz;
+        const height = this.terrainHeight(gx, gz);
+        if (!this.isFloodSeed(gx, gz, height)) continue;
+        const startY = this.seaLevel;
+        const startKey = `${lx},${startY},${lz}`;
+        flooded.add(startKey);
+        queue.push([lx, startY, lz]);
+      }
+    }
+
+    while (queue.length > 0) {
+      const [lx, y, lz] = queue.shift();
+      const neighbors = [
+        [lx + 1, y, lz],
+        [lx - 1, y, lz],
+        [lx, y, lz + 1],
+        [lx, y, lz - 1],
+        [lx, y - 1, lz],
+      ];
+
+      for (const [nx, ny, nz] of neighbors) {
+        if (ny <= 0 || ny > this.seaLevel) continue;
+        if (nx < -1 || nx > this.chunkSize || nz < -1 || nz > this.chunkSize) continue;
+
+        const gx = baseX + nx;
+        const gz = baseZ + nz;
+        if (this.getGeneratedBlockType(gx, ny, gz)) continue;
+
+        const neighborKey = `${nx},${ny},${nz}`;
+        if (flooded.has(neighborKey)) continue;
+        flooded.add(neighborKey);
+        queue.push([nx, ny, nz]);
+      }
+    }
+
+    return flooded;
+  }
+
+  fillFloodedCells(blocks, floodedCells) {
+    for (const key of floodedCells) {
+      const [lx, y, lz] = key.split(",").map(Number);
+      if (lx < 0 || lx >= this.chunkSize || lz < 0 || lz >= this.chunkSize) {
+        continue;
+      }
+      const blockKey = localKey(lx, y, lz);
+      if (!blocks.has(blockKey)) {
+        blocks.set(blockKey, "water");
+      }
+    }
+  }
+
+  buildTerrainBlocks(baseX, baseZ) {
+    const blocks = new Map();
+
+    for (let lx = 0; lx < this.chunkSize; lx++) {
+      for (let lz = 0; lz < this.chunkSize; lz++) {
+        const gx = baseX + lx;
+        const gz = baseZ + lz;
+        const height = this.terrainHeight(gx, gz);
+        const surface = this.surfaceType(gx, gz);
+        blocks.set(localKey(lx, 0, lz), "bedrock");
+
+        for (let y = 1; y <= height; y++) {
+          let type = "dirt";
+          if (y === height) type = surface;
+          else if (y < height - 2) type = "stone";
+          if (type === "stone" && this.shouldCarveCave(gx, y, gz, height)) continue;
+          blocks.set(localKey(lx, y, lz), type);
+        }
+      }
+    }
+
+    return blocks;
   }
 
   isAdjacentToWater(blocks, lx, y, lz) {
@@ -588,9 +695,11 @@ export class World {
   }
 
   generateChunkBlocks(cx, cz) {
-    const blocks = new Map();
     const baseX = cx * this.chunkSize;
     const baseZ = cz * this.chunkSize;
+    const blocks = this.buildTerrainBlocks(baseX, baseZ);
+    const floodedCells = this.buildFloodedCells(baseX, baseZ);
+    this.fillFloodedCells(blocks, floodedCells);
 
     for (let lx = 0; lx < this.chunkSize; lx++) {
       for (let lz = 0; lz < this.chunkSize; lz++) {
@@ -598,19 +707,6 @@ export class World {
         const gz = baseZ + lz;
         const height = this.terrainHeight(gx, gz);
         const surface = this.surfaceType(gx, gz);
-        blocks.set(localKey(lx, 0, lz), "bedrock");
-        for (let y = 1; y <= height; y++) {
-          let type = "dirt";
-          if (y === height) type = surface;
-          else if (y < height - 2) type = "stone";
-          if (type === "stone" && this.shouldCarveCave(gx, y, gz, height)) continue;
-          blocks.set(localKey(lx, y, lz), type);
-        }
-        if (this.shouldFloodColumn(gx, gz, height) || this.shouldFloodShoreline(gx, gz, height)) {
-          for (let y = height + 1; y <= this.seaLevel; y++) {
-            blocks.set(localKey(lx, y, lz), "water");
-          }
-        }
         this.tryGenerateTree(blocks, lx, height, lz, gx, gz);
         this.tryGenerateGrass(blocks, lx, height, lz, gx, gz, surface);
         this.tryGenerateFlower(blocks, lx, height, lz, gx, gz, surface);
