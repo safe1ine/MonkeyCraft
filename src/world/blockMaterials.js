@@ -167,12 +167,6 @@ export function createBlockMaterials() {
         side: THREE.DoubleSide,
         color: new THREE.Color(0x2f63cf),
       }),
-      side: colorMat(0x2f63cf, {
-        transparent: true,
-        opacity: 0.28,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      }),
     },
     wood: [
       mat(woodSide),

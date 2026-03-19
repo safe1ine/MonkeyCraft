@@ -26,7 +26,6 @@ export class World {
     this.cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
     this.plantGeometry = new THREE.PlaneGeometry(1, 1);
     this.waterGeometry = new THREE.PlaneGeometry(1, 1);
-    this.waterSideGeometry = new THREE.PlaneGeometry(1, 0.86);
     this.materials = createBlockMaterials();
 
     this.activeChunks = new Map();
@@ -108,34 +107,12 @@ export class World {
   }
 
   createWaterObject(x, y, z) {
-    const group = new THREE.Group();
-
-    const top = new THREE.Mesh(this.waterGeometry, this.materials.water.top);
-    top.rotation.x = -Math.PI / 2;
-    top.position.set(0.5, 0.86, 0.5);
-    group.add(top);
-
-    const sideDefs = [
-      { dx: 1, dz: 0, px: 1, pz: 0.5, ry: -Math.PI / 2 },
-      { dx: -1, dz: 0, px: 0, pz: 0.5, ry: Math.PI / 2 },
-      { dx: 0, dz: 1, px: 0.5, pz: 1, ry: Math.PI },
-      { dx: 0, dz: -1, px: 0.5, pz: 0, ry: 0 },
-    ];
-
-    for (const sideDef of sideDefs) {
-      const neighbor = this.getBlock(x + sideDef.dx, y, z + sideDef.dz);
-      if (neighbor === "water") continue;
-
-      const side = new THREE.Mesh(this.waterSideGeometry, this.materials.water.side);
-      side.position.set(sideDef.px, 0.43, sideDef.pz);
-      side.rotation.y = sideDef.ry;
-      group.add(side);
-    }
-
-    group.position.set(x, y, z);
-    group.userData.blockPos = { x, y, z };
-    group.userData.blockType = "water";
-    return group;
+    const mesh = new THREE.Mesh(this.waterGeometry, this.materials.water.top);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x + 0.5, y + 0.86, z + 0.5);
+    mesh.userData.blockPos = { x, y, z };
+    mesh.userData.blockType = "water";
+    return mesh;
   }
 
   createBlockObject(type, x, y, z) {
@@ -305,12 +282,6 @@ export class World {
     );
   }
 
-  isFloodSeed(x, z, height) {
-    if (height >= this.seaLevel) return false;
-    if (height <= this.seaLevel - 4) return true;
-    return this.floodNoise(x, z) > 1.15;
-  }
-
   getGeneratedBlockType(x, y, z) {
     if (y <= 0) return "bedrock";
     if (y >= this.maxHeight) return null;
@@ -329,43 +300,16 @@ export class World {
 
   buildFloodedCells(baseX, baseZ) {
     const flooded = new Set();
-    const queue = [];
 
     for (let lx = -1; lx <= this.chunkSize; lx++) {
       for (let lz = -1; lz <= this.chunkSize; lz++) {
         const gx = baseX + lx;
         const gz = baseZ + lz;
         const height = this.terrainHeight(gx, gz);
-        if (!this.isFloodSeed(gx, gz, height)) continue;
-        const startY = this.seaLevel;
-        const startKey = `${lx},${startY},${lz}`;
-        flooded.add(startKey);
-        queue.push([lx, startY, lz]);
-      }
-    }
-
-    while (queue.length > 0) {
-      const [lx, y, lz] = queue.shift();
-      const neighbors = [
-        [lx + 1, y, lz],
-        [lx - 1, y, lz],
-        [lx, y, lz + 1],
-        [lx, y, lz - 1],
-        [lx, y - 1, lz],
-      ];
-
-      for (const [nx, ny, nz] of neighbors) {
-        if (ny <= 0 || ny > this.seaLevel) continue;
-        if (nx < -1 || nx > this.chunkSize || nz < -1 || nz > this.chunkSize) continue;
-
-        const gx = baseX + nx;
-        const gz = baseZ + nz;
-        if (this.getGeneratedBlockType(gx, ny, gz)) continue;
-
-        const neighborKey = `${nx},${ny},${nz}`;
-        if (flooded.has(neighborKey)) continue;
-        flooded.add(neighborKey);
-        queue.push([nx, ny, nz]);
+        for (let y = this.seaLevel; y >= 1; y -= 1) {
+          if (this.getGeneratedBlockType(gx, y, gz)) continue;
+          flooded.add(`${lx},${y},${lz}`);
+        }
       }
     }
 
@@ -383,6 +327,11 @@ export class World {
         blocks.set(blockKey, "water");
       }
     }
+  }
+
+  isFloodedAt(x, z) {
+    const height = this.terrainHeight(x, z);
+    return height < this.seaLevel;
   }
 
   buildTerrainBlocks(baseX, baseZ) {
@@ -616,6 +565,14 @@ export class World {
     if (!this.isFlatEnoughForSpawn(x, z, height)) return false;
     if (this.shouldGenerateGrassAt(x, z, height, surface)) return false;
     if (this.shouldGenerateFlowerAt(x, z, height, surface)) return false;
+
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        if (this.isFloodedAt(x + dx, z + dz)) {
+          return false;
+        }
+      }
+    }
 
     const headMinY = height + 1;
     const headMaxY = height + 4;

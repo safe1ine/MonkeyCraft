@@ -600,7 +600,9 @@ canvas {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(68vw, 460px);
+  --toolbox-w: min(68vw, 460px);
+  --u: calc(var(--toolbox-w) / 176);
+  width: var(--toolbox-w);
   aspect-ratio: 176 / 166;
   pointer-events: auto;
   image-rendering: pixelated;
@@ -620,12 +622,11 @@ canvas {
   background-position: top left;
   background-size: calc(100% * 256 / 176) calc(100% * 256 / 166);
   filter: drop-shadow(0 16px 40px rgb(0 0 0 / 55%));
-  --u: calc(100% / 176);
 }
 
 .inventory-slot {
-  width: calc(var(--u) * 18);
-  height: calc(var(--u) * 18);
+  width: calc(var(--u) * 16);
+  height: calc(var(--u) * 16);
   background: url("./assets/minecraft/textures/gui/sprites/container/slot.png") center / 100% 100% no-repeat;
 }
 
@@ -698,10 +699,10 @@ canvas {
 
 .inventory-player {
   position: absolute;
-  left: calc(var(--u) * 25.75);
-  top: calc(var(--u) * 8.5);
-  width: calc(var(--u) * 48);
-  height: calc(var(--u) * 73);
+  left: calc(var(--u) * 27);
+  top: calc(var(--u) * 10);
+  width: calc(var(--u) * 43);
+  height: calc(var(--u) * 67);
 }
 
 .inventory-player-preview {
@@ -729,70 +730,25 @@ canvas {
 
 .inventory-crafting {
   position: absolute;
-  left: calc(var(--u) * 98);
+  left: calc(var(--u) * 96);
   top: calc(var(--u) * 7);
-  width: calc(var(--u) * 70);
+  width: calc(var(--u) * 76);
   height: calc(var(--u) * 54);
 }
 
 .inventory-crafting-title {
   position: absolute;
-  left: calc(var(--u) * 20);
-  top: calc(var(--u) * 7);
-  color: #3c3c3c;
-  font-size: calc(var(--u) * 9);
-  line-height: 1;
-}
-
-.inventory-crafting-grid {
-  position: absolute;
-  left: 0;
-  top: calc(var(--u) * 17);
-  display: grid;
-  grid-template-columns: repeat(2, calc(var(--u) * 18));
-  gap: 0;
-}
-
-.inventory-crafting-arrow {
-  position: absolute;
-  left: calc(var(--u) * 39);
-  top: calc(var(--u) * 27);
-  width: calc(var(--u) * 24);
-  height: calc(var(--u) * 17);
-}
-
-.inventory-crafting-arrow::before,
-.inventory-crafting-arrow::after {
-  content: "";
-  position: absolute;
-  background: #8a8a8a;
-}
-
-.inventory-crafting-arrow::before {
-  left: 0;
-  top: calc(var(--u) * 5.5);
-  width: calc(var(--u) * 14);
-  height: calc(var(--u) * 3);
-}
-
-.inventory-crafting-arrow::after {
-  right: 0;
+  left: calc(var(--u) * 13);
   top: calc(var(--u) * 2);
-  width: calc(var(--u) * 10);
-  height: calc(var(--u) * 10);
-  clip-path: polygon(0 0, 100% 50%, 0 100%);
-}
-
-.inventory-crafting-result {
-  position: absolute;
-  left: calc(var(--u) * 58);
-  top: calc(var(--u) * 17);
+  color: #3c3c3c;
+  font-size: calc(var(--u) * 6);
+  line-height: 1;
 }
 
 .recipe-book-toggle {
   position: absolute;
   left: calc(var(--u) * 106);
-  top: calc(var(--u) * 65);
+  top: calc(var(--u) * 61);
   width: calc(var(--u) * 17);
   height: calc(var(--u) * 18);
   border: 0;
@@ -810,23 +766,35 @@ canvas {
   position: absolute;
   left: calc(var(--u) * 8);
   right: calc(var(--u) * 8);
-  top: calc(var(--u) * 84);
+  top: calc(var(--u) * 85);
+  height: calc(var(--u) * 68);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 4);
 }
 
 .inventory-slot-grid {
   display: grid;
-  grid-template-columns: repeat(9, calc(var(--u) * 18));
+  grid-template-columns: repeat(9, calc(var(--u) * 16));
+  grid-auto-rows: calc(var(--u) * 16);
   gap: 0;
+  align-content: start;
+}
+
+#inventory-list {
+  flex: 0 0 calc(var(--u) * 48);
+  grid-template-rows: repeat(3, calc(var(--u) * 16));
 }
 
 .inventory-slot-grid--hotbar {
-  margin-top: calc(var(--u) * 4);
+  flex: 0 0 calc(var(--u) * 16);
+  grid-template-rows: calc(var(--u) * 16);
 }
 
 .inventory-item-slot {
   position: relative;
-  width: calc(var(--u) * 18);
-  height: calc(var(--u) * 18);
+  width: calc(var(--u) * 16);
+  height: calc(var(--u) * 16);
 }
 
 .inventory-item-icon {
@@ -853,8 +821,8 @@ canvas {
 }
 
 .inventory-empty-slot {
-  width: calc(var(--u) * 18);
-  height: calc(var(--u) * 18);
+  width: calc(var(--u) * 16);
+  height: calc(var(--u) * 16);
 }
 
 .recipe-panel {
@@ -994,7 +962,8 @@ canvas {
   }
 
   #toolbox {
-    width: min(90vw, 460px);
+    --toolbox-w: min(90vw, 460px);
+    width: var(--toolbox-w);
     height: auto;
   }
 
