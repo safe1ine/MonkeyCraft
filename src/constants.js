@@ -1,7 +1,7 @@
 export const WORLD_CONFIG = {
-  chunkSize: 12,
-  maxHeight: 32,
-  renderDistance: 2,
+  chunkSize: 16,
+  maxHeight: 40,
+  renderDistance: 4,
   seed: 1337,
 };
 

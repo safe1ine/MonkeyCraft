@@ -12,7 +12,7 @@ export class Game {
   constructor() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x9edbff);
-    this.scene.fog = new THREE.Fog(0x9edbff, 40, 120);
+    this.scene.fog = new THREE.Fog(0x9edbff, 70, 220);
 
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -48,6 +48,7 @@ export class Game {
       cooldown: 0,
     };
     this.mineTickSfxAt = 0;
+    this.started = false;
 
     this.createSelectionOutline();
     this.createMiningOverlay();
@@ -130,6 +131,7 @@ export class Game {
   }
 
   handleGlobalKeyDown(event) {
+    if (!this.started) return;
     if (event.code === "KeyE") {
       const open = this.hud.toggleToolbox();
       if (open && document.pointerLockElement) {
@@ -164,6 +166,7 @@ export class Game {
 
   handleMouseDown(event) {
     this.sfx.prime();
+    if (!this.started) return;
     if (!this.player.pointerLocked) return;
     if (this.hud.toolboxOpen) return;
 
@@ -362,7 +365,25 @@ export class Game {
 
   async start() {
     this.bindEvents();
+    this.hud.setWelcomeStatus("等待开始");
+    this.hud.waitForStart(() => {
+      this.beginGame().catch((err) => {
+        console.error("Game start failed", err);
+        this.hud.setWelcomeStatus("地图生成失败，请刷新重试");
+      });
+    });
+  }
+
+  async beginGame() {
+    if (this.started) return;
+    this.hud.setWelcomeStatus("正在读取存档...");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     await this.initFromSave();
+    this.hud.setWelcomeStatus("正在生成地图...");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await this.world.updateStreaming(this.player.pos);
+    this.started = true;
+    this.hud.hideWelcome();
     this.hud.setPointerLock(false);
     this.hud.setSelectedBlock(BLOCK_LABELS[PLACEABLE_BLOCKS[this.selectedBlockIndex]]);
     this.refreshInventoryUI();

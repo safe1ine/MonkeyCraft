@@ -1,5 +1,8 @@
 export class Hud {
   constructor() {
+    this.welcomeScreenEl = document.getElementById("welcome-screen");
+    this.startButtonEl = document.getElementById("start-game-button");
+    this.welcomeStatusEl = document.getElementById("welcome-status");
     this.tipsEl = document.getElementById("tips");
     this.statusEl = document.getElementById("status");
     this.toolboxEl = document.getElementById("toolbox");
@@ -10,6 +13,25 @@ export class Hud {
     this.miningProgress = 0;
     this.inventorySummary = "";
     this.toolboxOpen = false;
+  }
+
+  waitForStart(onStart) {
+    if (!this.startButtonEl) return;
+    this.startButtonEl.disabled = false;
+    this.startButtonEl.onclick = () => {
+      this.startButtonEl.disabled = true;
+      onStart?.();
+    };
+  }
+
+  setWelcomeStatus(text) {
+    if (this.welcomeStatusEl) {
+      this.welcomeStatusEl.textContent = text;
+    }
+  }
+
+  hideWelcome() {
+    this.welcomeScreenEl?.classList.add("hidden");
   }
 
   setPointerLock(locked) {
