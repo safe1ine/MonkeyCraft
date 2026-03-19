@@ -7,6 +7,7 @@ import { Hud } from "../ui/Hud.js";
 import { Inventory } from "../game/Inventory.js";
 import { Sfx } from "../audio/Sfx.js";
 import { createCrackTextures } from "../world/crackTextures.js";
+import { AnimalManager } from "../entity/AnimalManager.js";
 
 export class Game {
   constructor() {
@@ -36,6 +37,7 @@ export class Game {
     this.player = new PlayerController(this.camera, this.renderer.domElement, this.world);
     this.inventory = new Inventory();
     this.sfx = new Sfx();
+    this.animalManager = new AnimalManager(this.scene, this.world);
 
     this.lastStreamAt = 0;
     this.lastPlayerSaveAt = 0;
@@ -268,6 +270,7 @@ export class Game {
 
   resetRunState(spawn = { x: 0.5, y: 16, z: 0.5 }) {
     this.world.resetLoadedChunks();
+    this.animalManager.reset();
     this.player.pos.set(spawn.x, spawn.y, spawn.z);
     this.player.vel.set(0, 0, 0);
     this.player.yaw = 0;
@@ -637,6 +640,7 @@ export class Game {
     this.hud.setWelcomeStatus("正在生成地图...");
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await this.world.updateStreaming(this.player.pos);
+    this.animalManager.spawnNearPoint(this.player.pos.x, this.player.pos.z);
     this.started = true;
     this.hud.hideWelcome();
     this.hud.setPointerLock(false);
@@ -657,6 +661,7 @@ export class Game {
     this.updateClouds(elapsedTime);
     this.updateSelectionOutline();
     this.updateMining(dt);
+    this.animalManager.update(dt);
 
     this.interactionCooldown = Math.max(0, this.interactionCooldown - dt);
 
